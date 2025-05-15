@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Language Translator with Landmarks</title>
+    <title>Sign Language Translator Test</title>
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f0f8ff;
+            background-color: #f5f5f5;
         }
         .container {
             max-width: 800px;
@@ -18,11 +18,11 @@
             background-color: white;
             border-radius: 10px;
             padding: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         h1 {
             text-align: center;
-            color: #1a73e8;
+            color: #2c3e50;
         }
         .status {
             padding: 10px;
@@ -46,102 +46,102 @@
             margin-bottom: 20px;
         }
         #video {
-            display: none; /* Hide raw video feed */
+            display: none;
         }
         #processedVideo {
             width: 100%;
             max-width: 640px;
             height: auto;
-            border: 3px solid #1a73e8;
-            border-radius: 10px;
-            margin-bottom: 10px;
+            border: 2px solid #3498db;
+            border-radius: 8px;
         }
         .controls {
             display: flex;
             justify-content: center;
             gap: 10px;
-            margin-top: 10px;
-            width: 100%;
+            margin: 20px 0;
         }
-        input[type="text"] {
+        #translatedText {
             flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
+            padding: 12px;
+            border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 16px;
         }
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             border: none;
             border-radius: 5px;
             font-size: 16px;
             cursor: pointer;
-            color: white;
             font-weight: bold;
         }
         #resetButton {
-            background-color: #dc3545;
+            background-color: #e74c3c;
+            color: white;
         }
         #speakButton {
-            background-color: #1a73e8;
+            background-color: #3498db;
+            color: white;
         }
-        .confidence-bar {
+        .confidence-container {
             width: 100%;
             max-width: 640px;
+            margin: 10px auto;
+        }
+        .confidence-bar {
             height: 20px;
-            background-color: #e9ecef;
+            background-color: #ecf0f1;
             border-radius: 10px;
-            margin-top: 10px;
             overflow: hidden;
         }
-        .confidence-level {
+        #confidenceLevel {
             height: 100%;
             width: 0%;
-            background: linear-gradient(90deg, #dc3545, #ffc107, #28a745);
-            border-radius: 10px;
-            transition: width 0.3s ease;
+            background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+            transition: width 0.3s;
+        }
+        .stats {
+            text-align: center;
+            margin: 10px 0;
+            font-family: monospace;
+            color: #7f8c8d;
         }
         .footer {
             text-align: center;
             margin-top: 20px;
-            color: #6c757d;
+            color: #95a5a6;
             font-size: 14px;
-        }
-        #fpsCounter {
-            text-align: center;
-            font-family: monospace;
-            margin-top: 5px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Sign Language Translator with Landmarks</h1>
+        <h1>Sign Language Translator Test</h1>
 
         <div id="status" class="status disconnected">
             Connecting to server...
         </div>
 
         <div class="video-container">
-            <!-- Hidden raw video feed -->
             <video id="video" autoplay playsinline></video>
-            <!-- Processed video with landmarks -->
-            <img id="processedVideo" alt="Processed video feed">
-            <div class="confidence-bar">
-                <div id="confidenceLevel" class="confidence-level"></div>
+            <img id="processedVideo" alt="Processed video with landmarks">
+            <div class="confidence-container">
+                <div class="confidence-bar">
+                    <div id="confidenceLevel"></div>
+                </div>
+                <div class="stats" id="stats">FPS: 0 | Latency: 0ms</div>
             </div>
-            <div id="fpsCounter">FPS: 0 | Latency: 0ms</div>
         </div>
 
         <div class="controls">
-            <input type="text" id="translatedText" placeholder="Translated text will appear here" readonly>
+            <input type="text" id="translatedText" placeholder="Translation will appear here" readonly>
             <button id="resetButton">Reset</button>
             <button id="speakButton">Speak</button>
         </div>
 
         <div class="footer">
-            <p>Real-time sign language translation with MediaPipe landmarks</p>
-            <p id="serverUrl">Server: connecting...</p>
+            <p>Connected to: <span id="serverUrl">real-time-sign-translation.onrender.com</span></p>
         </div>
     </div>
 
@@ -154,76 +154,76 @@
         const resetButton = document.getElementById('resetButton');
         const speakButton = document.getElementById('speakButton');
         const confidenceLevel = document.getElementById('confidenceLevel');
-        const fpsCounter = document.getElementById('fpsCounter');
-        const serverUrlDisplay = document.getElementById('serverUrl');
+        const stats = document.getElementById('stats');
+        const serverUrl = document.getElementById('serverUrl');
 
         // Configuration
-        const SERVER_URL = window.location.hostname === 'localhost'
-            ? 'http://localhost:10000'
-            : 'https://your-render-url.onrender.com';
-
-        serverUrlDisplay.textContent = `Server: ${SERVER_URL.replace('https://', '')}`;
-
-        // Performance tracking
-        let frameTimes = [];
-        let lastPredictionTime = 0;
-
-        // Socket.IO connection
-        const socket = io(https://real-time-sign-translation.onrender.com/test, {
-            transports: ['websocket'],
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            timeout: 20000,
-            auth: {
-                clientType: 'web-interface'
-            }
-        });
-
-        // Connection state
+        const SERVER_URL = window.location.origin; // Automatically detects current host
         let isConnected = false;
         let stream;
         let captureInterval;
+        let frameTimes = [];
+        let lastProcessingTime = 0;
 
-        // Initialize application
-        async function init() {
-            try {
-                await connectToServer();
-                await startCamera();
-                setupEventHandlers();
-            } catch (error) {
-                console.error('Initialization error:', error);
-                status.textContent = `Error: ${error.message}`;
-                status.className = 'status disconnected';
+        // Initialize Socket.IO connection
+        const socket = io(SERVER_URL, {
+            transports: ['websocket'],
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000
+        });
+
+        // Connection handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            isConnected = true;
+            status.textContent = 'Connected to server';
+            status.className = 'status connected';
+            startCamera();
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            isConnected = false;
+            status.textContent = 'Disconnected from server';
+            status.className = 'status disconnected';
+            stopCamera();
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('Connection error:', err);
+            status.textContent = 'Connection error - trying to reconnect...';
+            status.className = 'status disconnected';
+        });
+
+        // Handle prediction responses
+        socket.on('prediction', (data) => {
+            lastProcessingTime = data.processing_ms || 0;
+
+            // Update translation text
+            translatedText.value = data.text || '';
+
+            // Update confidence meter
+            if (data.confidence) {
+                const confidencePercent = Math.round(data.confidence * 100);
+                confidenceLevel.style.width = `${confidencePercent}%`;
             }
-        }
 
-        // Connect to Flask backend
-        async function connectToServer() {
-            return new Promise((resolve) => {
-                socket.on('connect', () => {
-                    console.log('Connected to server');
-                    isConnected = true;
-                    status.textContent = 'Connected to server';
-                    status.className = 'status connected';
-                    resolve();
-                });
+            // Update processed image
+            if (data.annotated_frame) {
+                processedVideo.src = `data:image/jpeg;base64,${data.annotated_frame}`;
+            }
 
-                socket.on('disconnect', () => {
-                    console.log('Disconnected from server');
-                    isConnected = false;
-                    status.textContent = 'Disconnected from server';
-                    status.className = 'status disconnected';
-                });
+            updateStats();
+        });
 
-                socket.on('connect_error', (err) => {
-                    console.error('Connection error:', err);
-                    status.textContent = `Connection error: ${err.message}`;
-                    status.className = 'status disconnected';
-                });
-            });
-        }
+        // Handle errors
+        socket.on('error', (error) => {
+            console.error('Server error:', error);
+            translatedText.value = `Error: ${error.message || 'Processing error'}`;
+        });
 
-        // Access camera stream
+        // Start camera stream
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -235,14 +235,27 @@
                     audio: false
                 });
                 video.srcObject = stream;
-                return new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        startFrameCapture();
-                        resolve();
-                    };
-                });
+
+                // Start capturing frames once video is ready
+                video.onloadedmetadata = () => {
+                    startFrameCapture();
+                };
             } catch (error) {
-                throw new Error(`Camera access denied: ${error.message}`);
+                console.error('Camera error:', error);
+                status.textContent = 'Camera access denied - please enable permissions';
+                status.className = 'status disconnected';
+            }
+        }
+
+        // Stop camera stream
+        function stopCamera() {
+            if (captureInterval) {
+                clearInterval(captureInterval);
+                captureInterval = null;
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
         }
 
@@ -257,13 +270,16 @@
                 if (!isConnected) return;
 
                 const startTime = performance.now();
+
+                // Capture frame
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Convert to JPEG with quality adjustment
-                const quality = isConnected ? 0.8 : 0.6; // Lower quality if connection is spotty
+                // Convert to JPEG
+                const quality = 0.7;
                 const imageData = canvas.toDataURL('image/jpeg', quality);
                 const base64Data = imageData.split(',')[1];
 
+                // Send to server
                 socket.emit('frame', {
                     image: base64Data,
                     timestamp: Date.now(),
@@ -273,44 +289,22 @@
                 // Calculate FPS
                 frameTimes.push(startTime);
                 frameTimes = frameTimes.filter(t => t > startTime - 1000);
-                const fps = frameTimes.length;
-                fpsCounter.textContent = `FPS: ${fps} | Latency: ${lastPredictionTime}ms`;
             }, 1000 / 15); // ~15 FPS
         }
 
-        // Handle prediction responses
-        socket.on('prediction', (data) => {
-            lastPredictionTime = data.processing_ms || 0;
+        // Update performance stats
+        function updateStats() {
+            const fps = frameTimes.length;
+            stats.textContent = `FPS: ${fps} | Processing: ${lastProcessingTime}ms`;
+        }
 
-            // Update UI
-            translatedText.value = data.text || '';
-
-            if (data.confidence) {
-                const confidencePercent = Math.round(data.confidence * 100);
-                confidenceLevel.style.width = `${confidencePercent}%`;
-
-                // Dynamic confidence color
-                const hue = Math.floor(confidencePercent * 1.2); // 0-120 (red to green)
-                confidenceLevel.style.backgroundColor = `hsl(${hue}, 100%, 45%)`;
-            }
-
-            if (data.annotated_frame) {
-                processedVideo.src = `data:image/jpeg;base64,${data.annotated_frame}`;
-            }
-        });
-
-        // Handle errors
-        socket.on('error', (error) => {
-            console.error('Server error:', error);
-            translatedText.value = `Error: ${error.message || 'Unknown error'}`;
-        });
-
-        // Button handlers
+        // Reset button handler
         resetButton.addEventListener('click', () => {
             translatedText.value = '';
             confidenceLevel.style.width = '0%';
         });
 
+        // Speak button handler
         speakButton.addEventListener('click', () => {
             if (translatedText.value && 'speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(translatedText.value);
@@ -319,17 +313,15 @@
             }
         });
 
-        // Cleanup on exit
+        // Cleanup on page exit
         window.addEventListener('beforeunload', () => {
-            if (captureInterval) clearInterval(captureInterval);
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
+            stopCamera();
             if (socket) socket.disconnect();
         });
 
-        // Start the application
-        init();
+        // Initialize
+        console.log('Initializing application...');
+        serverUrl.textContent = SERVER_URL.replace(/(^\w+:|^)\/\//, '');
     </script>
 </body>
 </html>

@@ -1,12 +1,3 @@
-try:
-    eventlet.monkey_patch()
-    print("✅ Eventlet monkey patching successful")
-except Exception as e:
-    print(f"⚠️ Eventlet patching failed: {e}")
-    import threading
-
-    print("Falling back to threading")
-
 import os
 import time
 import base64
@@ -19,16 +10,14 @@ from flask_socketio import SocketIO, emit
 from concurrent.futures import ThreadPoolExecutor
 import mediapipe as mp
 
-# ==================== INITIALIZATION ====================
-# Critical for WebSocket support
+# Initialize eventlet for WebSocket support
+eventlet.monkey_patch()
 
-
-# Initialize Flask with static files support
-app = Flask(__name__, static_folder='static')
+# Flask Application Setup
+app = Flask(__name__, static_folder='static', static_url_path='')
 app.config.update({
     'SECRET_KEY': os.urandom(24),
-    'MAX_CONTENT_LENGTH': 16 * 1024 * 1024,  # 16MB
-    'TEMPLATES_AUTO_RELOAD': True
+    'MAX_CONTENT_LENGTH': 16 * 1024 * 1024  # 16MB
 })
 
 # Socket.IO Configuration
@@ -39,11 +28,11 @@ socketio = SocketIO(
     max_http_buffer_size=10 * 1024 * 1024,
     ping_timeout=300,
     ping_interval=60,
-    engineio_logger=True,
-    logger=True
+    logger=True,
+    engineio_logger=True
 )
 
-# ==================== ML MODEL SETUP ====================
+# Load ML Model
 MODEL = None
 LABELS = {
     0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F', 6: 'G', 7: 'H',
@@ -61,23 +50,89 @@ try:
 except Exception as e:
     print(f"❌ Model loading error: {e}")
 
-# ==================== MEDIAPIPE CONFIG ====================
+# MediaPipe Configuration
 mp_hands = mp.solutions.hands
-HANDS = mp_hands.Hands(
+hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
     min_detection_confidence=0.7,
-    min_tracking_confidence=0.5,
-    model_complexity=1
+    min_tracking_confidence=0.5
 )
 mp_drawing = mp.solutions.drawing_utils
 
-# ==================== CORE FUNCTIONALITY ====================
+# Thread Pool for Parallel Processing
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-def process_frame(image_data):
-    """Process a single frame through MediaPipe and ML model"""
+# Routes
+@app.route('/')
+def index():
+    return jsonify({
+        "status": "running",
+        "endpoints": {
+            "test_interface": "/test",
+            "websocket": "/socket.io",
+            "health_check": "/health"
+        }
+    })
+
+
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "healthy",
+        "model_ready": bool(MODEL),
+        "timestamp": time.time()
+    })
+
+
+@app.route('/test')
+def test_interface():
+    """Serve the test interface HTML page"""
+    return send_from_directory('static', 'test.html')
+
+
+# Socket.IO Handlers
+@socketio.on('connect')
+def handle_connect():
+    print(f"🚀 Client connected: {request.sid}")
+    emit('connection_status', {
+        'status': 'connected',
+        'model_ready': bool(MODEL)
+    })
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f"🔌 Client disconnected: {request.sid}")
+
+
+@socketio.on('frame')
+def handle_frame(data):
+    if 'image' not in data:
+        emit('error', {'message': 'No image data'}, room=request.sid)
+        return
+
+    def callback(future):
+        try:
+            result = future.result()
+            emit('prediction', {
+                'text': result['text'],
+                'confidence': result['confidence'],
+                'annotated_frame': result['annotated_frame'],
+                'processing_ms': result['processing_ms']
+            }, room=request.sid)
+        except Exception as e:
+            emit('error', {
+                'message': 'Processing failed',
+                'details': str(e)
+            }, room=request.sid)
+
+    executor.submit(process_frame, data['image'], request.sid).add_done_callback(callback)
+
+
+def process_frame(image_data, client_id):
+    start_time = time.perf_counter()
     try:
         # Decode image
         img_bytes = base64.b64decode(image_data)
@@ -85,9 +140,9 @@ def process_frame(image_data):
         if frame is None:
             raise ValueError("Invalid image data")
 
-        # Process with MediaPipe
+        # Process frame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = HANDS.process(frame_rgb)
+        results = hands.process(frame_rgb)
         annotated_frame = frame.copy()
         result = {'text': '', 'confidence': 0}
 
@@ -105,8 +160,9 @@ def process_frame(image_data):
             # Make prediction
             if MODEL:
                 hand = results.multi_hand_landmarks[0]
-                data_aux = [coord for landmark in hand.landmark
-                            for coord in [landmark.x, landmark.y]]
+                data_aux = []
+                for landmark in hand.landmark:
+                    data_aux.extend([landmark.x, landmark.y])
 
                 prediction = MODEL.predict([np.asarray(data_aux)])
                 proba = MODEL.predict_proba([np.asarray(data_aux)])
@@ -116,100 +172,23 @@ def process_frame(image_data):
                 }
 
         # Encode result
-        _, buffer = cv2.imencode('.jpg', annotated_frame, [
-            int(cv2.IMWRITE_JPEG_QUALITY), 85
-        ])
+        _, buffer = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        processing_ms = (time.perf_counter() - start_time) * 1000
+
         return {
             **result,
-            'annotated_frame': base64.b64encode(buffer).decode('utf-8')
+            'annotated_frame': base64.b64encode(buffer).decode('utf-8'),
+            'processing_ms': processing_ms
         }
 
     except Exception as e:
-        print(f"⚠️ Frame processing error: {e}")
+        print(f"⚠️ Processing error: {e}")
         raise
 
 
-# ==================== ROUTES ====================
-@app.route('/')
-def index():
-    return jsonify({
-        "status": "running",
-        "endpoints": {
-            "websocket": "/socket.io",
-            "test_page": "/test",
-            "health_check": "/health"
-        }
-    })
-
-
-@app.route('/health')
-def health():
-    """Render.com health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "model_ready": bool(MODEL),
-        "timestamp": time.time()
-    })
-
-
-@app.route('/test')
-def test_interface():
-    """Serve HTML test page"""
-    return send_from_directory('static', 'test.html')
-
-
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    """Serve static files (for Socket.IO client)"""
-    return send_from_directory('static', filename)
-
-
-# ==================== SOCKET.IO HANDLERS ====================
-@socketio.on('connect')
-def handle_connect():
-    """New client connection"""
-    emit('connection_status', {
-        'status': 'connected',
-        'model_ready': bool(MODEL),
-        'server_time': time.time()
-    })
-    print(f"🚀 New connection: {request.sid}")
-
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Client disconnected"""
-    print(f"🔌 Disconnected: {request.sid}")
-
-
-@socketio.on('frame')
-def handle_frame(data):
-    """Process incoming video frames"""
-    if 'image' not in data:
-        emit('error', {'message': 'No image data'}, room=request.sid)
-        return
-
-    def callback(future):
-        try:
-            result = future.result()
-            emit('prediction', {
-                **result,
-                'timestamp': time.time()
-            }, room=request.sid)
-        except Exception as e:
-            emit('error', {
-                'message': 'Processing failed',
-                'details': str(e)
-            }, room=request.sid)
-
-    executor.submit(process_frame, data['image']).add_done_callback(callback)
-
-
-# ==================== START SERVER ====================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     print(f"🚀 Starting server on port {port}")
-
     socketio.run(
         app,
         host='0.0.0.0',
