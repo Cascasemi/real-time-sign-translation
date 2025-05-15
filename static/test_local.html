@@ -50,7 +50,10 @@
             position: relative;
         }
         #video {
-            display: none;
+            display: block;
+            width: 100%;
+            max-width: 640px;
+            height: auto;
         }
         #processedVideo {
             width: 100%;
@@ -152,11 +155,7 @@
 <body>
     <div class="container">
         <h1>Sign Language Translator</h1>
-
-        <div id="status" class="status disconnected">
-            Connecting to server...
-        </div>
-
+        <div id="status" class="status disconnected">Connecting to server...</div>
         <div class="video-container">
             <video id="video" autoplay playsinline></video>
             <canvas id="processedVideo" width="640" height="480"></canvas>
@@ -169,20 +168,16 @@
                 <div class="stats" id="stats">FPS: 0 | Processing: 0ms | Network: 0ms</div>
             </div>
         </div>
-
         <div class="controls">
             <input type="text" id="translatedText" placeholder="Translation will appear here" readonly>
             <button id="resetButton">Reset</button>
             <button id="speakButton">Speak</button>
         </div>
-
         <div class="footer">
             <p>Connected to: <span id="serverUrl"></span></p>
         </div>
     </div>
-
     <script>
-        // DOM Elements
         const video = document.getElementById('video');
         const processedVideo = document.getElementById('processedVideo');
         const ctx = processedVideo.getContext('2d');
@@ -196,7 +191,6 @@
         const loadingMessage = document.getElementById('loadingMessage');
         const noHandsMessage = document.getElementById('noHandsMessage');
 
-        // Configuration
         const SERVER_URL = window.location.origin;
         const TARGET_FPS = 15;
         let isConnected = false;
@@ -207,7 +201,6 @@
         let lastFrameTime = 0;
         let isCameraActive = false;
 
-        // Initialize Socket.IO connection
         const socket = io({
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -216,7 +209,6 @@
             timeout: 20000
         });
 
-        // Connection handlers
         socket.on('connect', () => {
             console.log('Connected to server');
             isConnected = true;
@@ -244,22 +236,17 @@
             }
         });
 
-        // Handle prediction responses
         socket.on('prediction', (data) => {
             const now = performance.now();
             lastProcessingTime = data.processing_ms || 0;
             const networkLatency = now - lastFrameTime;
-
-            // Update translation text
             translatedText.value = data.text || '';
 
-            // Update confidence meter
             if (data.confidence) {
                 const confidencePercent = Math.round(data.confidence * 100);
                 confidenceLevel.style.width = `${confidencePercent}%`;
             }
 
-            // Update processed image
             if (data.annotated_frame) {
                 const img = new Image();
                 img.onload = function() {
@@ -277,7 +264,6 @@
             updateStats(networkLatency);
         });
 
-        // Handle errors
         socket.on('error', (error) => {
             console.error('Server error:', error);
             translatedText.value = `Error: ${error.message || 'Processing error'}`;
@@ -285,39 +271,28 @@
             loadingMessage.textContent = "Processing error";
         });
 
-        // Status update function
         function updateStatus(message, type) {
             status.textContent = message;
             status.className = `status ${type}`;
         }
 
-        // Camera functions
         async function initializeCamera() {
             if (isCameraActive) return;
-
             try {
                 loadingMessage.textContent = "Requesting camera access...";
-
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 640 },
-                        height: { ideal: 480 },
-                        facingMode: "user"
-                    },
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
                     audio: false
                 });
-
                 video.srcObject = stream;
                 isCameraActive = true;
                 loadingMessage.textContent = "Processing video...";
-
                 return new Promise((resolve) => {
                     video.onloadedmetadata = () => {
                         startFrameCapture();
                         resolve();
                     };
                 });
-
             } catch (error) {
                 console.error('Camera error:', error);
                 updateStatus(`Camera error: ${error.message}`, 'disconnected');
@@ -329,29 +304,22 @@
 
         function startFrameCapture() {
             if (captureInterval) clearInterval(captureInterval);
-
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
-
             captureInterval = setInterval(() => {
                 if (!isConnected || !stream) return;
-
                 lastFrameTime = performance.now();
-
                 try {
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     const imageData = canvas.toDataURL('image/jpeg', 0.7);
                     const base64Data = imageData.split(',')[1];
-
                     socket.emit('frame', {
                         image: base64Data,
                         timestamp: Date.now(),
                         resolution: `${canvas.width}x${canvas.height}`
                     });
-
-                    // Calculate FPS
                     frameTimes.push(lastFrameTime);
                     frameTimes = frameTimes.filter(t => t > lastFrameTime - 1000);
                 } catch (error) {
@@ -376,13 +344,11 @@
             noHandsMessage.style.display = 'none';
         }
 
-        // Update performance stats
         function updateStats(networkLatency = 0) {
             const fps = frameTimes.length;
             stats.textContent = `FPS: ${fps} | Processing: ${lastProcessingTime}ms | Network: ${Math.round(networkLatency)}ms`;
         }
 
-        // Button handlers
         resetButton.addEventListener('click', () => {
             translatedText.value = '';
             confidenceLevel.style.width = '0%';
@@ -400,18 +366,14 @@
             }
         });
 
-        // Cleanup
         window.addEventListener('beforeunload', () => {
             stopCamera();
             if (socket) socket.disconnect();
         });
 
-        // Initialize
         console.log('Initializing application...');
         serverUrl.textContent = SERVER_URL.replace(/(^\w+:|^)\/\//, '');
         updateStatus(`Connecting to ${SERVER_URL}`, 'disconnected');
-
-        // Draw initial canvas state
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, processedVideo.width, processedVideo.height);
         loadingMessage.style.display = 'block';
