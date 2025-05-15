@@ -5,13 +5,18 @@ import eventlet
 import numpy as np
 import cv2
 import pickle
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request  # Added request import
 from flask_socketio import SocketIO, emit
 from concurrent.futures import ThreadPoolExecutor
 import mediapipe as mp
+import logging
 
 # Initialize eventlet for WebSocket support
 eventlet.monkey_patch()
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Flask Application Setup
 app = Flask(__name__, static_folder='static', static_url_path='')
@@ -46,9 +51,9 @@ LABELS = {
 try:
     with open('model.p', 'rb') as f:
         MODEL = pickle.load(f).get('model')
-        print("✅ Model loaded successfully!")
+        logger.info("✅ Model loaded successfully!")
 except Exception as e:
-    print(f"❌ Model loading error: {e}")
+    logger.error(f"❌ Model loading error: {e}")
 
 # MediaPipe Configuration
 mp_hands = mp.solutions.hands
@@ -63,7 +68,6 @@ mp_drawing = mp.solutions.drawing_utils
 # Thread Pool for Parallel Processing
 executor = ThreadPoolExecutor(max_workers=4)
 
-
 # Routes
 @app.route('/')
 def index():
@@ -76,7 +80,6 @@ def index():
         }
     })
 
-
 @app.route('/health')
 def health():
     return jsonify({
@@ -85,51 +88,57 @@ def health():
         "timestamp": time.time()
     })
 
-
 @app.route('/test')
 def test_interface():
     """Serve the test interface HTML page"""
     return send_from_directory('static', 'test_local.html')
 
-
 # Socket.IO Handlers
 @socketio.on('connect')
 def handle_connect():
-    print(f"🚀 Client connected: {request.sid}")
-    emit('connection_status', {
-        'status': 'connected',
-        'model_ready': bool(MODEL)
-    })
-
+    try:
+        logger.info(f"🚀 Client connected: {request.sid}")
+        emit('connection_status', {
+            'status': 'connected',
+            'model_ready': bool(MODEL)
+        })
+    except Exception as e:
+        logger.error(f"Connection error: {e}")
+        return False
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print(f"🔌 Client disconnected: {request.sid}")
-
+    logger.info(f"🔌 Client disconnected: {request.sid}")
 
 @socketio.on('frame')
 def handle_frame(data):
-    if 'image' not in data:
-        emit('error', {'message': 'No image data'}, room=request.sid)
-        return
+    try:
+        if 'image' not in data:
+            raise ValueError("No image data provided")
 
-    def callback(future):
-        try:
-            result = future.result()
-            emit('prediction', {
-                'text': result['text'],
-                'confidence': result['confidence'],
-                'annotated_frame': result['annotated_frame'],
-                'processing_ms': result['processing_ms']
-            }, room=request.sid)
-        except Exception as e:
-            emit('error', {
-                'message': 'Processing failed',
-                'details': str(e)
-            }, room=request.sid)
+        def callback(future):
+            try:
+                result = future.result()
+                emit('prediction', {
+                    'text': result.get('text', ''),
+                    'confidence': result.get('confidence', 0),
+                    'annotated_frame': result.get('annotated_frame', ''),
+                    'processing_ms': result.get('processing_ms', 0)
+                }, room=request.sid)
+            except Exception as e:
+                logger.error(f"Callback error: {e}")
+                emit('error', {
+                    'message': 'Processing failed',
+                    'details': str(e)
+                }, room=request.sid)
 
-    executor.submit(process_frame, data['image'], request.sid).add_done_callback(callback)
-
+        executor.submit(process_frame, data['image'], request.sid).add_done_callback(callback)
+    except Exception as e:
+        logger.error(f"Frame handling error: {e}")
+        emit('error', {
+            'message': 'Frame processing error',
+            'details': str(e)
+        }, room=request.sid)
 
 def process_frame(image_data, client_id):
     start_time = time.perf_counter()
@@ -182,13 +191,12 @@ def process_frame(image_data, client_id):
         }
 
     except Exception as e:
-        print(f"⚠️ Processing error: {e}")
+        logger.error(f"Frame processing error: {e}")
         raise
-
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 Starting server on port {port}")
+    logger.info(f"🚀 Starting server on port {port}")
     socketio.run(
         app,
         host='0.0.0.0',
