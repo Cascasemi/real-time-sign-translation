@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: sign-language-backend
+    runtime: python
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: |
+      python app.py
+    envVars:
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+    autoScaling:
+      enabled: true
+      minInstances: 1
+      maxInstances: 3

@@ -1,0 +1,15 @@
+# Production Core
+flask
+flask-socketio
+gunicorn
+gevent
+gevent-websocket
+
+# Computer Vision
+opencv-python-headless  # Lighter than opencv-python
+mediapipe
+numpy
+
+# ML
+scikit-learn
+joblib

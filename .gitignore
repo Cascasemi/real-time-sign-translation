@@ -1,0 +1,27 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.so
+.Python
+
+# Flask
+instance/
+.webassets-cache
+
+# Environment files
+.env
+.venv
+env/
+*.env
+
+# Editor
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
