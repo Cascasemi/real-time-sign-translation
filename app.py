@@ -89,7 +89,7 @@ def health():
 @app.route('/test')
 def test_interface():
     """Serve the test interface HTML page"""
-    return send_from_directory('static', 'test.html')
+    return send_from_directory('static', 'test_local.html')
 
 
 # Socket.IO Handlers
