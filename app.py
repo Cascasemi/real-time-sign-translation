@@ -1,3 +1,9 @@
+try:
+    import eventlet
+    eventlet.monkey_patch()  # Must be first import!
+except ImportError:
+    print("⚠️ eventlet not found, falling back to threading")
+
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 import pickle
