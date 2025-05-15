@@ -1,12 +1,14 @@
-# Production Core
+# WebSocket and Async
+eventlet==0.33.3
+gevent==22.10.2
+
+# Core
 flask
 flask-socketio
 gunicorn
-gevent
-gevent-websocket
 
 # Computer Vision
-opencv-python-headless  # Lighter than opencv-python
+opencv-python-headless
 mediapipe
 numpy
 
