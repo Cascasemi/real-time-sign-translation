@@ -1,3 +1,12 @@
+try:
+    eventlet.monkey_patch()
+    print("✅ Eventlet monkey patching successful")
+except Exception as e:
+    print(f"⚠️ Eventlet patching failed: {e}")
+    import threading
+
+    print("Falling back to threading")
+
 import os
 import time
 import base64
@@ -12,14 +21,7 @@ import mediapipe as mp
 
 # ==================== INITIALIZATION ====================
 # Critical for WebSocket support
-try:
-    eventlet.monkey_patch()
-    print("✅ Eventlet monkey patching successful")
-except Exception as e:
-    print(f"⚠️ Eventlet patching failed: {e}")
-    import threading
 
-    print("Falling back to threading")
 
 # Initialize Flask with static files support
 app = Flask(__name__, static_folder='static')
