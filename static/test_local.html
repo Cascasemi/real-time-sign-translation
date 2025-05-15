@@ -137,6 +137,16 @@
             color: white;
             font-weight: bold;
         }
+        .no-hands {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -151,6 +161,7 @@
             <video id="video" autoplay playsinline></video>
             <canvas id="processedVideo" width="640" height="480"></canvas>
             <div id="loadingMessage" class="loading">Loading video stream...</div>
+            <div id="noHandsMessage" class="no-hands" style="display: none;">No hands detected</div>
             <div class="confidence-container">
                 <div class="confidence-bar">
                     <div id="confidenceLevel"></div>
@@ -183,6 +194,7 @@
         const stats = document.getElementById('stats');
         const serverUrl = document.getElementById('serverUrl');
         const loadingMessage = document.getElementById('loadingMessage');
+        const noHandsMessage = document.getElementById('noHandsMessage');
 
         // Configuration
         const SERVER_URL = window.location.origin;
@@ -196,8 +208,7 @@
         let isCameraActive = false;
 
         // Initialize Socket.IO connection
-        const socket = io(SERVER_URL, {
-            transports: ['websocket'],
+        const socket = io({
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
@@ -240,9 +251,7 @@
             const networkLatency = now - lastFrameTime;
 
             // Update translation text
-            if (data.text) {
-                translatedText.value = data.text;
-            }
+            translatedText.value = data.text || '';
 
             // Update confidence meter
             if (data.confidence) {
@@ -257,8 +266,12 @@
                     ctx.clearRect(0, 0, processedVideo.width, processedVideo.height);
                     ctx.drawImage(img, 0, 0, processedVideo.width, processedVideo.height);
                     loadingMessage.style.display = 'none';
+                    noHandsMessage.style.display = data.text ? 'none' : 'block';
                 };
                 img.src = `data:image/jpeg;base64,${data.annotated_frame}`;
+            } else {
+                loadingMessage.style.display = 'block';
+                noHandsMessage.style.display = 'none';
             }
 
             updateStats(networkLatency);
@@ -268,6 +281,8 @@
         socket.on('error', (error) => {
             console.error('Server error:', error);
             translatedText.value = `Error: ${error.message || 'Processing error'}`;
+            loadingMessage.style.display = 'block';
+            loadingMessage.textContent = "Processing error";
         });
 
         // Status update function
@@ -281,6 +296,8 @@
             if (isCameraActive) return;
 
             try {
+                loadingMessage.textContent = "Requesting camera access...";
+
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         width: { ideal: 640 },
@@ -289,21 +306,24 @@
                     },
                     audio: false
                 });
+
                 video.srcObject = stream;
                 isCameraActive = true;
                 loadingMessage.textContent = "Processing video...";
 
-                video.onloadedmetadata = () => {
-                    startFrameCapture();
-                };
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        startFrameCapture();
+                        resolve();
+                    };
+                });
 
-                video.onerror = () => {
-                    throw new Error('Video error occurred');
-                };
             } catch (error) {
                 console.error('Camera error:', error);
                 updateStatus(`Camera error: ${error.message}`, 'disconnected');
+                loadingMessage.textContent = "Camera access denied";
                 isCameraActive = false;
+                return Promise.reject(error);
             }
         }
 
@@ -353,6 +373,7 @@
             loadingMessage.style.display = 'block';
             loadingMessage.textContent = "Camera disconnected";
             ctx.clearRect(0, 0, processedVideo.width, processedVideo.height);
+            noHandsMessage.style.display = 'none';
         }
 
         // Update performance stats
@@ -368,6 +389,7 @@
             ctx.clearRect(0, 0, processedVideo.width, processedVideo.height);
             loadingMessage.style.display = 'block';
             loadingMessage.textContent = "Processing video...";
+            noHandsMessage.style.display = 'none';
         });
 
         speakButton.addEventListener('click', () => {
